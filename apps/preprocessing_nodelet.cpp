@@ -75,6 +75,7 @@ public:
     pub_outlier_pc2 = nh.advertise<sensor_msgs::PointCloud2>(topic_outlier_pc2, 5);
     pc2_raw_pub = nh.advertise<sensor_msgs::PointCloud2>("/eagle_data/pc2_raw",1);
     enable_dynamic_object_removal = private_nh.param<bool>("enable_dynamic_object_removal", false);
+    use_dynamic_tf = private_nh.param<bool>("use_dynamic_tf_for_input", false);
     power_threshold = private_nh.param<float>("power_threshold", 0);
   }
 
@@ -277,27 +278,56 @@ private:
     for(int i = 0; i < eagle_msg->points.size(); i++)
     {
         // cout << i << ":    " <<eagle_msg->points[i].x<<endl;
-        if(eagle_msg->channels[2].values[i] > power_threshold) //"Power"
+        if(eagle_msg->channels[intensity_index].values[i] > power_threshold) //"Power"
         {
             if (eagle_msg->points[i].x == NAN || eagle_msg->points[i].y == NAN || eagle_msg->points[i].z == NAN) continue;
             if (eagle_msg->points[i].x == INFINITY || eagle_msg->points[i].y == INFINITY || eagle_msg->points[i].z == INFINITY) continue;
             cv::Mat ptMat, dstMat;
             ptMat = (cv::Mat_<double>(4, 1) << eagle_msg->points[i].x, eagle_msg->points[i].y, eagle_msg->points[i].z, 1);    
             // Perform matrix multiplication and save as Mat_ for easy element access
-            dstMat= Radar_to_livox * ptMat;
+            //VK: This transform is hardcoded for their platform. We need to do our transform (Hugin->Base link).
+            //VK: If param set, just populate those two pcl clouds and transform right after by the standard ros function
+            if(!use_dynamic_tf) dstMat= Radar_to_livox * ptMat;
+            else dstMat = ptMat;
             radarpoint_raw.x = dstMat.at<double>(0,0);
             radarpoint_raw.y = dstMat.at<double>(1,0);
             radarpoint_raw.z = dstMat.at<double>(2,0);
-            radarpoint_raw.intensity = eagle_msg->channels[2].values[i];
-            radarpoint_raw.doppler = eagle_msg->channels[0].values[i];
+            radarpoint_raw.intensity = eagle_msg->channels[intensity_index].values[i];
+            radarpoint_raw.doppler = eagle_msg->channels[doppler_index].values[i];
             radarpoint_xyzi.x = dstMat.at<double>(0,0);
             radarpoint_xyzi.y = dstMat.at<double>(1,0);
             radarpoint_xyzi.z = dstMat.at<double>(2,0);
-            radarpoint_xyzi.intensity = eagle_msg->channels[2].values[i];
+            radarpoint_xyzi.intensity = eagle_msg->channels[intensity_index].values[i];
 
             radarcloud_raw->points.push_back(radarpoint_raw);
             radarcloud_xyzi->points.push_back(radarpoint_xyzi);
         }
+    }
+
+    if(use_dynamic_tf){
+      if(!baselinkFrame.empty()) {
+        if(!tf_listener.canTransform(baselinkFrame, eagle_msg->header.frame_id, eagle_msg->header.stamp)) {
+          std::cerr << "failed to find transform between " << baselinkFrame << " and " << eagle_msg->header.frame_id << std::endl;
+          return;
+        }
+
+        tf::StampedTransform transform;
+        tf_listener.waitForTransform(baselinkFrame, eagle_msg->header.frame_id, eagle_msg->header.stamp, ros::Duration(2.0));
+        tf_listener.lookupTransform(baselinkFrame, eagle_msg->header.frame_id, eagle_msg->header.stamp, transform);
+
+        pcl::PointCloud<PointT>::Ptr transformed_radarcloud_xyzi(new pcl::PointCloud<PointT>());
+        pcl_ros::transformPointCloud(*radarcloud_xyzi, *transformed_radarcloud_xyzi, transform);
+
+        transformed_radarcloud_xyzi->header.frame_id = baselinkFrame;
+        transformed_radarcloud_xyzi->header.stamp = radarcloud_xyzi->header.stamp;
+        radarcloud_xyzi = transformed_radarcloud_xyzi;
+
+        for(int i = 0; i < radarcloud_xyzi->size(); i++){
+          radarcloud_raw->points[i].x = radarcloud_xyzi->points[i].x;
+          radarcloud_raw->points[i].y = radarcloud_xyzi->points[i].y;
+          radarcloud_raw->points[i].z = radarcloud_xyzi->points[i].z;
+        }
+      }
     }
 
     //********** Publish PointCloud2 Format Raw Cloud **********
@@ -351,21 +381,21 @@ private:
     src_cloud = deskewing(src_cloud);
 
     // if baselinkFrame is defined, transform the input cloud to the frame
-    if(!baselinkFrame.empty()) {
-      if(!tf_listener.canTransform(baselinkFrame, src_cloud->header.frame_id, ros::Time(0))) {
-        std::cerr << "failed to find transform between " << baselinkFrame << " and " << src_cloud->header.frame_id << std::endl;
-      }
-
-      tf::StampedTransform transform;
-      tf_listener.waitForTransform(baselinkFrame, src_cloud->header.frame_id, ros::Time(0), ros::Duration(2.0));
-      tf_listener.lookupTransform(baselinkFrame, src_cloud->header.frame_id, ros::Time(0), transform);
-
-      pcl::PointCloud<PointT>::Ptr transformed(new pcl::PointCloud<PointT>());
-      pcl_ros::transformPointCloud(*src_cloud, *transformed, transform);
-      transformed->header.frame_id = baselinkFrame;
-      transformed->header.stamp = src_cloud->header.stamp;
-      src_cloud = transformed;
-    }
+//    if(!baselinkFrame.empty()) {
+//      if(!tf_listener.canTransform(baselinkFrame, src_cloud->header.frame_id, ros::Time(0))) {
+//        std::cerr << "failed to find transform between " << baselinkFrame << " and " << src_cloud->header.frame_id << std::endl;
+//      }
+//
+//      tf::StampedTransform transform;
+//      tf_listener.waitForTransform(baselinkFrame, src_cloud->header.frame_id, ros::Time(0), ros::Duration(2.0));
+//      tf_listener.lookupTransform(baselinkFrame, src_cloud->header.frame_id, ros::Time(0), transform);
+//
+//      pcl::PointCloud<PointT>::Ptr transformed(new pcl::PointCloud<PointT>());
+//      pcl_ros::transformPointCloud(*src_cloud, *transformed, transform);
+//      transformed->header.frame_id = baselinkFrame;
+//      transformed->header.stamp = src_cloud->header.stamp;
+//      src_cloud = transformed;
+//    }
 
     pcl::PointCloud<PointT>::ConstPtr filtered = distance_filter(src_cloud);
     // filtered = passthrough(filtered);
@@ -589,6 +619,9 @@ private:
   tf::TransformListener tf_listener;
   tf::TransformBroadcaster tf_broadcaster;
 
+
+  //VK: New param to enable dynamical input pointcloud transform
+  bool use_dynamic_tf;
 
   bool use_distance_filter;
   double distance_near_thresh;

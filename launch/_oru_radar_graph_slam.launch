@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <launch>
   <!-- Parameters -->
-  <rosparam file="$(find radar_graph_slam)/config/params.yaml" command="load" />
+  <rosparam file="$(find radar_graph_slam)/config/params_oru.yaml" command="load" />
   <param name="use_sim_time" value="true"/>
   
   <!-- arguments -->
@@ -40,6 +40,7 @@
   <!-- radar_preprocessing_nodelet -->
   <node pkg="nodelet" type="nodelet" name="radar_preprocessing_nodelet" args="load radar_graph_slam/PreprocessingNodelet $(arg nodelet_manager)">
     <!-- distance filter -->
+    <param name="use_dynamic_tf_for_input" value="true" />
     <param name="use_distance_filter" value="true" />
     <param name="distance_near_thresh" value="2" />
     <param name="distance_far_thresh" value="100.0" />
@@ -195,14 +196,6 @@
 
   <node pkg="rviz" type="rviz" name="rviz_slam" args="-d $(find radar_graph_slam)/rviz/radar_graph_slam.rviz" respawn="true"/>
 
-  <!--- Rosbag Play -->
-  <include file="$(find radar_graph_slam)/launch/rosbag_play_radar_carpark1.launch" />
-  <!-- <include file="$(find radar_graph_slam)/launch/rosbag_play_radar_carpark3.launch" /> -->
-  <!-- <include file="$(find radar_graph_slam)/launch/rosbag_play_radar_garden.launch" /> -->
-  <!-- <include file="$(find radar_graph_slam)/launch/rosbag_play_radar_nanyanglink.launch" /> -->
-  <!-- <include file="$(find radar_graph_slam)/launch/rosbag_play_radar_ntuloop1.launch" /> -->
-  <!-- <include file="$(find radar_graph_slam)/launch/rosbag_play_radar_ntuloop2.launch" /> -->
-  <!-- <include file="$(find radar_graph_slam)/launch/rosbag_play_radar_ntuloop3.launch" /> -->
-  <!-- <include file="$(find radar_graph_slam)/launch/rosbag_play_radar_smoke.launch" /> -->
+
 
 </launch>

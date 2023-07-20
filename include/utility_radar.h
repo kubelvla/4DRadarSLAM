@@ -78,6 +78,10 @@ public:
     string odometryFrame;
     string mapFrame;
 
+    //Input point cloud settings
+    int doppler_index;
+    int intensity_index;
+
     // GPS Settings
     bool useGpsElevation;
     float gpsCovThreshold;
@@ -149,6 +153,9 @@ public:
         nh.param<std::string>("radar_slam/baselinkFrame", baselinkFrame, "base_link");
         nh.param<std::string>("radar_slam/odometryFrame", odometryFrame, "odom_imu"); 
         nh.param<std::string>("radar_slam/mapFrame", mapFrame, "map");
+
+        nh.param<int>("radar_slam/input_pcl_doppler_index", doppler_index, 0);
+        nh.param<int>("radar_slam/input_pcl_intensity_index", intensity_index, 2);
 
         nh.param<bool>("radar_slam/useGpsElevation", useGpsElevation, false);
         nh.param<float>("radar_slam/gpsCovThreshold", gpsCovThreshold, 2.0);
