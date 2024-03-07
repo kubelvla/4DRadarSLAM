@@ -117,10 +117,20 @@ add_dependencies(preprocessing_nodelet ${PROJECT_NAME}_gencpp)
 add_library(scan_matching_odometry_nodelet
   apps/scan_matching_odometry_nodelet.cpp
   src/radar_graph_slam/registrations.cpp
+  src/radar_graph_slam/keyframe.cpp
 )
 target_link_libraries(scan_matching_odometry_nodelet
   ${catkin_LIBRARIES}
   ${PCL_LIBRARIES}
+  ${G2O_TYPES_DATA}
+  ${G2O_CORE_LIBRARY}
+  ${G2O_STUFF_LIBRARY}
+  ${G2O_SOLVER_PCG}
+  ${G2O_SOLVER_CSPARSE}   # be aware of that CSPARSE is released under LGPL
+  ${G2O_SOLVER_CHOLMOD}   # be aware of that cholmod is released under GPL
+  ${G2O_TYPES_SLAM3D}
+  ${G2O_TYPES_SLAM3D_ADDONS}
+
 )
 add_dependencies(scan_matching_odometry_nodelet ${PROJECT_NAME}_gencpp)
 

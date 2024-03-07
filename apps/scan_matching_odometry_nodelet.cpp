@@ -67,7 +67,7 @@ public:
   // typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::PointCloud2, geometry_msgs::TransformStamped> ApproxSyncPolicy2;
   EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
-  ScanMatchingOdometryNodelet() {}
+  ScanMatchingOdometryNodelet():tf_listener(ros::Duration(30.0), true) {}
   virtual ~ScanMatchingOdometryNodelet() {}
 
   virtual void onInit() {
@@ -75,6 +75,9 @@ public:
     nh = getNodeHandle();
     mt_nh = getMTNodeHandle();
     private_nh = getPrivateNodeHandle();
+    skip_N_initial_scans = 0;
+
+
 
     initialize_params(); // this
 
@@ -130,6 +133,9 @@ private:
 
     enable_scan_to_map = pnh.param<bool>("enable_scan_to_map", false);
     max_submap_frames = pnh.param<int>("max_submap_frames", 5);
+
+    use_tf_prior = pnh.param<bool>("enable_tf_prior", false);
+
 
     enable_imu_fusion = private_nh.param<bool>("enable_imu_fusion", false);
     imu_debug_out = private_nh.param<bool>("imu_debug_out", false);
@@ -348,6 +354,11 @@ private:
     if(!ros::ok()) {
       return;
     }
+    if(skip_N_initial_scans>0){
+      skip_N_initial_scans--;
+      cout << "Skipping " << cloud_msg->header.stamp.sec << endl;
+      return;
+    }
     timeLaserOdometry = cloud_msg->header.stamp.toSec();
     double this_cloud_time = cloud_msg->header.stamp.toSec();
     static double last_cloud_time = this_cloud_time;
@@ -445,8 +456,22 @@ private:
 
     // **********  Matching  **********
     Eigen::Matrix4d guess;
-    if (use_ego_vel)
+    if (use_ego_vel) {
       guess = prev_trans_s2s * egovel_cum * msf_delta.matrix();
+      std::cout << "Guess from ego:" << std::endl << guess.matrix() << std::endl;
+    }
+    else if(use_tf_prior) {
+      try {
+        tf_listener.lookupTransform("base_link_prior", keyframe_stamp, "base_link_prior", stamp, "map", diff_prior);
+        guess = tf2isometry(diff_prior).matrix();
+        std::cout << "Guess from TF:" << std::endl << guess.matrix() << std::endl;
+      }catch(...)
+      {
+        guess = prev_trans_s2s * msf_delta.matrix();
+        std::cout << "Guess from TF lookup failed. Lookup times: " << keyframe_stamp.sec
+        << ", " << stamp.sec << std::endl;
+      }
+    }
     else
       guess = prev_trans_s2s * msf_delta.matrix();
 
@@ -462,6 +487,7 @@ private:
     if(!registration_s2s->hasConverged()) {
       NODELET_INFO_STREAM("scan matching_ has not converged!!");
       NODELET_INFO_STREAM("ignore this frame(" << stamp << ")");
+
       if (enable_scan_to_map) return keyframe_pose_s2m * prev_trans_s2m;
       else return keyframe_pose_s2s * prev_trans_s2s;
     }
@@ -714,6 +740,7 @@ private:
 
   bool enable_imu_fusion;
   bool imu_debug_out;
+  bool use_tf_prior;
   Eigen::Matrix3d global_orient_matrix;  // The rotation matrix with initial IMU roll & pitch measurement (yaw = 0)
     double timeLaserOdometry = 0;
     int imuPointerFront;
@@ -722,6 +749,8 @@ private:
     float imuRoll[imuQueLength];
     float imuPitch[imuQueLength];
     double imu_fusion_ratio;
+
+  int skip_N_initial_scans;
 
   std::unique_ptr<message_filters::Subscriber<geometry_msgs::TwistWithCovarianceStamped>> ego_vel_sub;
   std::unique_ptr<message_filters::Subscriber<sensor_msgs::PointCloud2>> points_sub;
@@ -749,6 +778,8 @@ private:
   tf::TransformBroadcaster map2odom_broadcaster; // map => odom_frame
 
   std::string points_topic;
+
+  tf::StampedTransform diff_prior;
 
 
   // keyframe_ parameters
